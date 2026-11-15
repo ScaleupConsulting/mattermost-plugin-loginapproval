@@ -9,25 +9,30 @@ import (
 )
 
 // configuration holds the System Console settings. Public fields are loaded from the server
-// configuration in OnConfigurationChange; exemptUsernames is derived from ExemptUsernames there.
+// configuration; the private fields are derived from them by loadConfiguration.
 // A configuration is never modified after setConfiguration, so readers share one pointer.
 type configuration struct {
-	ApprovalWindowMinutes int
-	EmailRateLimitMinutes int
-	ExemptUsernames       string
+	TOTPRequiredFrom string
+	ExemptUsernames  string
 
-	exemptUsernames map[string]bool
+	totpRequiredFrom time.Time
+	exemptUsernames  map[string]bool
 }
 
-// validate rejects settings that would make every link expire at once or disable the rate limit.
-func (c *configuration) validate() error {
-	if c.ApprovalWindowMinutes < 1 {
-		return errors.Errorf("ApprovalWindowMinutes must be at least 1, got %d", c.ApprovalWindowMinutes)
+// parseTOTPRequiredFrom accepts only an RFC 3339 timestamp in UTC, so the setting reads the same to every admin.
+func parseTOTPRequiredFrom(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, errors.New("set TOTP required from (TOTPRequiredFrom) to an RFC 3339 UTC timestamp such as 2026-11-28T22:00:00Z")
 	}
-	if c.EmailRateLimitMinutes < 1 {
-		return errors.Errorf("EmailRateLimitMinutes must be at least 1, got %d", c.EmailRateLimitMinutes)
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, errors.Wrapf(err, "TOTPRequiredFrom %q is not an RFC 3339 timestamp", value)
 	}
-	return nil
+	if _, offset := t.Zone(); offset != 0 {
+		return time.Time{}, errors.Errorf("TOTPRequiredFrom %q must be in UTC, ending in Z", value)
+	}
+	return t.UTC(), nil
 }
 
 // parseExemptUsernames turns the comma-separated setting into a lowercase lookup set.
@@ -39,16 +44,6 @@ func parseExemptUsernames(list string) map[string]bool {
 		}
 	}
 	return set
-}
-
-// approvalWindow is both the emailed link's lifetime and how long an approval waits to be used.
-func (c *configuration) approvalWindow() time.Duration {
-	return time.Duration(c.ApprovalWindowMinutes) * time.Minute
-}
-
-// emailRateLimit is the minimum gap between two approval emails to one user.
-func (c *configuration) emailRateLimit() time.Duration {
-	return time.Duration(c.EmailRateLimitMinutes) * time.Minute
 }
 
 // isExempt reports whether the admin listed this username as password-only.
@@ -82,16 +77,23 @@ func (p *Plugin) setConfiguration(configuration *configuration) {
 	p.configuration = configuration
 }
 
-// OnConfigurationChange loads and validates the settings, keeping the previous ones on error.
-func (p *Plugin) OnConfigurationChange() error {
+// loadConfiguration reads and parses the settings and makes them active, or changes nothing on error.
+func (p *Plugin) loadConfiguration() error {
 	configuration := new(configuration)
 	if err := p.API.LoadPluginConfiguration(configuration); err != nil {
 		return errors.Wrap(err, "failed to load plugin configuration")
 	}
-	if err := configuration.validate(); err != nil {
+	cutoff, err := parseTOTPRequiredFrom(configuration.TOTPRequiredFrom)
+	if err != nil {
 		return err
 	}
+	configuration.totpRequiredFrom = cutoff
 	configuration.exemptUsernames = parseExemptUsernames(configuration.ExemptUsernames)
 	p.setConfiguration(configuration)
 	return nil
+}
+
+// OnConfigurationChange keeps the previous settings when the new ones are invalid.
+func (p *Plugin) OnConfigurationChange() error {
+	return p.loadConfiguration()
 }
