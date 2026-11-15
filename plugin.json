@@ -1,0 +1,42 @@
+{
+    "id": "com.scaleupconsulting.loginapproval",
+    "name": "Login Approval",
+    "description": "Second factor for Team Edition: users without TOTP approve each new sign-in from a link emailed to them.",
+    "version": "0.1.0",
+    "homepage_url": "",
+    "support_url": "",
+    "min_server_version": "12.0.0",
+    "server": {
+        "executables": {
+            "linux-amd64": "server/dist/plugin-linux-amd64",
+            "linux-arm64": "server/dist/plugin-linux-arm64"
+        }
+    },
+    "settings_schema": {
+        "header": "Users with TOTP multi-factor authentication turned on sign in as usual. Everyone else approves each sign-in from a link emailed to them, then signs in again from the same IP address and browser.",
+        "footer": "",
+        "settings": [
+            {
+                "key": "ApprovalWindowMinutes",
+                "display_name": "Approval window (minutes):",
+                "type": "number",
+                "help_text": "How long an emailed link stays valid, and how long an approved sign-in waits to be used. Default 15.",
+                "default": 15
+            },
+            {
+                "key": "EmailRateLimitMinutes",
+                "display_name": "Email rate limit (minutes):",
+                "type": "number",
+                "help_text": "At most one approval email per user in this many minutes. Sign-in attempts inside that time are rejected without another email. Default 2.",
+                "default": 2
+            },
+            {
+                "key": "ExemptUsernames",
+                "display_name": "Exempt usernames:",
+                "type": "text",
+                "help_text": "Comma-separated usernames that sign in with only a password. Leave empty for none.",
+                "default": ""
+            }
+        ]
+    }
+}
